@@ -11,6 +11,7 @@ from causallearn.utils.KCI.GaussianKernel import GaussianKernel
 from causallearn.utils.KCI.Kernel import Kernel
 from causallearn.utils.KCI.LinearKernel import LinearKernel
 from causallearn.utils.KCI.PolynomialKernel import PolynomialKernel
+from causallearn.utils.KCI.DeltaKernel import DeltaKernel
 
 
 # Cannot find reference 'xxx' in '__init__.pyi | __init__.pyi | __init__.pxd' is a bug in pycharm, please ignore
@@ -59,7 +60,7 @@ class KCI_UInd(object):
         self.thresh = 1e-6
         self.approx = approx
 
-    def compute_pvalue(self, data_x=None, data_y=None):
+    def compute_pvalue(self, data_x=None, data_y=None, is_discrete_X=None, is_discrete_Y=None):
         """
         Main function: compute the p value and return it together with the test statistic
 
@@ -78,7 +79,12 @@ class KCI_UInd(object):
             Kxc, Kyc are both symmetric
         """
 
-        Kx, Ky = self.kernel_matrix(data_x, data_y)
+        Kx, Ky = self.kernel_matrix(
+            data_x,
+            data_y,
+            is_discrete_X=is_discrete_X,
+            is_discrete_Y=is_discrete_Y
+        )
         test_stat, Kxc, Kyc = self.HSIC_V_statistic(Kx, Ky)
 
         if self.approx:
@@ -89,7 +95,12 @@ class KCI_UInd(object):
             pvalue = sum(null_dstr.squeeze() > test_stat) / float(self.nullss)
         return pvalue, test_stat
 
-    def kernel_matrix(self, data_x, data_y):
+    def kernel_matrix(self,
+            data_x,
+            data_y,
+            is_discrete_X=None,
+            is_discrete_Y=None
+        ):
         """
         Compute kernel matrix for data x and data y
 
@@ -103,7 +114,9 @@ class KCI_UInd(object):
         Kx: kernel matrix for data_x (nxn)
         Ky: kernel matrix for data_y (nxn)
         """
-        if self.kernelX == 'Gaussian':
+        if (is_discrete_X is not None) and is_discrete_X:
+            kernelX = DeltaKernel()
+        elif self.kernelX == 'Gaussian':
             if self.est_width == 'manual':
                 if self.kwidthx is not None:
                     kernelX = GaussianKernel(self.kwidthx)
@@ -124,7 +137,9 @@ class KCI_UInd(object):
         else:
             raise Exception('Undefined kernel function')
 
-        if self.kernelY == 'Gaussian':
+        if (is_discrete_Y is not None) and is_discrete_Y:
+            kernelY = DeltaKernel()
+        elif self.kernelY == 'Gaussian':
             if self.est_width == 'manual':
                 if self.kwidthy is not None:
                     kernelY = GaussianKernel(self.kwidthy)
@@ -285,7 +300,7 @@ class KCI_CInd(object):
         self.thresh = 1e-5
         self.approx = approx
 
-    def compute_pvalue(self, data_x=None, data_y=None, data_z=None):
+    def compute_pvalue(self, data_x=None, data_y=None, data_z=None, is_discrete_X=None, is_discrete_Y=None, is_discrete_Z=None):
         """
         Main function: compute the p value and return it together with the test statistic
         Parameters
@@ -299,7 +314,14 @@ class KCI_CInd(object):
         pvalue: p value
         test_stat: test statistic
         """
-        Kx, Ky, Kzx, Kzy = self.kernel_matrix(data_x, data_y, data_z)
+        Kx, Ky, Kzx, Kzy = self.kernel_matrix(
+            data_x,
+            data_y,
+            data_z,
+            is_discrete_X=is_discrete_X,
+            is_discrete_Y=is_discrete_Y,
+            is_discrete_Z=is_discrete_Z
+        )
         test_stat, KxR, KyR = self.KCI_V_statistic(Kx, Ky, Kzx, Kzy)
         uu_prod, size_u = self.get_uuprod(KxR, KyR)
         if self.approx:
@@ -310,7 +332,7 @@ class KCI_CInd(object):
             pvalue = sum(null_samples > test_stat) / float(self.nullss)
         return pvalue, test_stat
 
-    def kernel_matrix(self, data_x, data_y, data_z):
+    def kernel_matrix(self, data_x, data_y, data_z, is_discrete_X=None, is_discrete_Y=None, is_discrete_Z=None):
         """
         Compute kernel matrix for data x, data y, and data_z
         Parameters
@@ -318,6 +340,9 @@ class KCI_CInd(object):
         data_x: input data for x (nxd1 array)
         data_y: input data for y (nxd2 array)
         data_z: input data for z (nxd3 array)
+        is_discrete_X : boolean, optional (default=None)
+        is_discrete_Y : boolean, optional (default=None)
+        is_discrete_Z : list of boolean, optional (default=None)
 
         Returns
         _________
@@ -327,20 +352,41 @@ class KCI_CInd(object):
         kzy: centering kernel matrix for data_y (nxn)
         """
         # normalize the data
-        data_x = stats.zscore(data_x, ddof=1, axis=0)
-        data_x[np.isnan(data_x)] = 0.
+        if not is_discrete_X:
+            data_x = stats.zscore(data_x, ddof=1, axis=0)
+            data_x[np.isnan(data_x)] = 0.
         
-        data_y = stats.zscore(data_y, ddof=1, axis=0)
-        data_y[np.isnan(data_y)] = 0.
+        if not is_discrete_Y:
+            data_y = stats.zscore(data_y, ddof=1, axis=0)
+            data_y[np.isnan(data_y)] = 0.
         
-        data_z = stats.zscore(data_z, ddof=1, axis=0)
-        data_z[np.isnan(data_z)] = 0.
+        if (is_discrete_Z is None) or not np.any(is_discrete_Z):
+            data_z = stats.zscore(data_z, ddof=1, axis=0)
+            data_z[np.isnan(data_z)] = 0.
+        else:
+            filter_ = np.argwhere(is_discrete_Z)[0]
+            data_z_c = data_z[:, ~filter_].copy()
+            data_z_d = data_z[:, filter_].cop()
+
+            data_z_c = stats.zscore(data_z_c, ddof=1, axis=0)
+            data_z_c[np.isnan(data_z_c)] = 0.
+
+            data_z_d = stats.zscore(data_z_d, ddof=1, axis=0)
+            data_z_d[np.isnan(data_z_d)] = 0.
+
+            data_z = stats.zscore(data_z, ddof=1, axis=0)
+            data_z[np.isnan(data_z)] = 0.
+
         # We set 'ddof=1' to conform to the normalization way in the original Matlab implementation in
         # http://people.tuebingen.mpg.de/kzhang/KCI-test.zip
 
         # concatenate x and z
-        data_x = np.concatenate((data_x, 0.5 * data_z), axis=1)
-        if self.kernelX == 'Gaussian':
+        if (is_discrete_X is None) or not is_discrete_X:
+            data_x = np.concatenate((data_x, 0.5 * data_z), axis=1)
+
+        if (is_discrete_X is not None) and is_discrete_X:
+            kernelX = DeltaKernel()
+        elif self.kernelX == 'Gaussian':
             if self.est_width == 'manual':
                 if self.kwidthx is not None:
                     kernelX = GaussianKernel(self.kwidthx)
@@ -364,7 +410,9 @@ class KCI_CInd(object):
         else:
             raise Exception('Undefined kernel function')
 
-        if self.kernelY == 'Gaussian':
+        if (is_discrete_Y is not None) and is_discrete_Y:
+            kernelY = DeltaKernel()
+        elif self.kernelY == 'Gaussian':
             if self.est_width == 'manual':
                 if self.kwidthy is not None:
                     kernelY = GaussianKernel(self.kwidthy)
@@ -395,7 +443,22 @@ class KCI_CInd(object):
         Kx = Kernel.center_kernel_matrix(Kx)
         Ky = Kernel.center_kernel_matrix(Ky)
 
-        if self.kernelZ == 'Gaussian':
+        if (is_discrete_Z is not None) and np.any(is_discrete_Z):
+            kernelZ_c = GaussianKernel()
+            if self.est_width == 'median':
+                kernelZ_c.set_width_median(data_z_c)
+            elif self.est_width == 'empirical':
+                kernelZ_c.set_width_empirical_kci(data_z_c)
+
+            kernelZ_d = DeltaKernel()
+
+            Kz_c = kernelZ_c.kernel(data_z_c)
+            Kz_d = kernelZ_d.kernel(data_z_d)
+            Kz = Kz_c * Kz_d
+
+            Kzx = Kernel.center_kernel_matrix(Kz)
+            Kzy = Kzx
+        elif self.kernelZ == 'Gaussian':
             if not self.use_gp:
                 if self.est_width == 'manual':
                     if self.kwidthz is not None:
