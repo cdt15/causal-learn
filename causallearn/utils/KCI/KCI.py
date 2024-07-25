@@ -114,7 +114,12 @@ class KCI_UInd(object):
         Kx: kernel matrix for data_x (nxn)
         Ky: kernel matrix for data_y (nxn)
         """
-        if (is_discrete_X is not None) and is_discrete_X:
+        if is_discrete_X is None:
+            is_discrete_X = False
+        if is_discrete_Y is None:
+            is_discrete_Y = False
+
+        if is_discrete_X:
             kernelX = DeltaKernel()
         elif self.kernelX == 'Gaussian':
             if self.est_width == 'manual':
@@ -137,7 +142,7 @@ class KCI_UInd(object):
         else:
             raise Exception('Undefined kernel function')
 
-        if (is_discrete_Y is not None) and is_discrete_Y:
+        if is_discrete_Y:
             kernelY = DeltaKernel()
         elif self.kernelY == 'Gaussian':
             if self.est_width == 'manual':
@@ -332,133 +337,55 @@ class KCI_CInd(object):
             pvalue = sum(null_samples > test_stat) / float(self.nullss)
         return pvalue, test_stat
 
-    def kernel_matrix(self, data_x, data_y, data_z, is_discrete_X=None, is_discrete_Y=None, is_discrete_Z=None):
-        """
-        Compute kernel matrix for data x, data y, and data_z
-        Parameters
-        ----------
-        data_x: input data for x (nxd1 array)
-        data_y: input data for y (nxd2 array)
-        data_z: input data for z (nxd3 array)
-        is_discrete_X : boolean, optional (default=None)
-        is_discrete_Y : boolean, optional (default=None)
-        is_discrete_Z : list of boolean, optional (default=None)
-
-        Returns
-        _________
-        Kx: kernel matrix for data_x (nxn)
-        Ky: kernel matrix for data_y (nxn)
-        Kzx: centering kernel matrix for data_x (nxn)
-        kzy: centering kernel matrix for data_y (nxn)
-        """
-        # normalize the data
-        if not is_discrete_X:
-            data_x = stats.zscore(data_x, ddof=1, axis=0)
-            data_x[np.isnan(data_x)] = 0.
-        
-        if not is_discrete_Y:
-            data_y = stats.zscore(data_y, ddof=1, axis=0)
-            data_y[np.isnan(data_y)] = 0.
-        
-        if (is_discrete_Z is None) or not np.any(is_discrete_Z):
-            data_z = stats.zscore(data_z, ddof=1, axis=0)
-            data_z[np.isnan(data_z)] = 0.
-        else:
-            filter_ = np.argwhere(is_discrete_Z)[0]
-            data_z_c = data_z[:, ~filter_].copy()
-            data_z_d = data_z[:, filter_].cop()
-
-            data_z_c = stats.zscore(data_z_c, ddof=1, axis=0)
-            data_z_c[np.isnan(data_z_c)] = 0.
-
-            data_z_d = stats.zscore(data_z_d, ddof=1, axis=0)
-            data_z_d[np.isnan(data_z_d)] = 0.
-
-            data_z = stats.zscore(data_z, ddof=1, axis=0)
-            data_z[np.isnan(data_z)] = 0.
-
-        # We set 'ddof=1' to conform to the normalization way in the original Matlab implementation in
-        # http://people.tuebingen.mpg.de/kzhang/KCI-test.zip
-
-        # concatenate x and z
-        if (is_discrete_X is None) or not is_discrete_X:
-            data_x = np.concatenate((data_x, 0.5 * data_z), axis=1)
-
-        if (is_discrete_X is not None) and is_discrete_X:
-            kernelX = DeltaKernel()
-        elif self.kernelX == 'Gaussian':
+    def _make_kernel_xy(self, data, data_cond, is_discrete, kernel_name, kwidth, xy="x"):
+        if is_discrete:
+            kernel = DeltaKernel()
+        elif kernel_name == 'Gaussian':
             if self.est_width == 'manual':
-                if self.kwidthx is not None:
-                    kernelX = GaussianKernel(self.kwidthx)
+                if kwidth is not None:
+                    kernel = GaussianKernel(kwidth)
                 else:
-                    raise Exception('specify kwidthx')
+                    raise Exception(f'specify kwidth{xy}')
             else:
-                kernelX = GaussianKernel()
+                kernel = GaussianKernel()
                 if self.est_width == 'median':
-                    kernelX.set_width_median(data_x)
+                    kernel.set_width_median(data)
                 elif self.est_width == 'empirical':
                     # kernelX's empirical width is determined by data_z's shape, please refer to the original code
                     # (http://people.tuebingen.mpg.de/kzhang/KCI-test.zip) in the file
                     # 'algorithms/CInd_test_new_withGP.m', Line 37 to 52.
-                    kernelX.set_width_empirical_kci(data_z)
+                    kernel.set_width_empirical_kci(data_cond)
                 else:
                     raise Exception('Undefined kernel width estimation method')
-        elif self.kernelX == 'Polynomial':
-            kernelX = PolynomialKernel(self.polyd)
-        elif self.kernelX == 'Linear':
-            kernelX = LinearKernel()
+        elif kernel_name == 'Polynomial':
+            kernel = PolynomialKernel(self.polyd)
+        elif kernel_name == 'Linear':
+            kernel = LinearKernel()
         else:
             raise Exception('Undefined kernel function')
 
-        if (is_discrete_Y is not None) and is_discrete_Y:
-            kernelY = DeltaKernel()
-        elif self.kernelY == 'Gaussian':
-            if self.est_width == 'manual':
-                if self.kwidthy is not None:
-                    kernelY = GaussianKernel(self.kwidthy)
-                else:
-                    raise Exception('specify kwidthy')
-            else:
-                kernelY = GaussianKernel()
-                if self.est_width == 'median':
-                    kernelY.set_width_median(data_y)
-                elif self.est_width == 'empirical':
-                    # kernelY's empirical width is determined by data_z's shape, please refer to the original code
-                    # (http://people.tuebingen.mpg.de/kzhang/KCI-test.zip) in the file
-                    # 'algorithms/CInd_test_new_withGP.m', Line 37 to 52.
-                    kernelY.set_width_empirical_kci(data_z)
-                else:
-                    raise Exception('Undefined kernel width estimation method')
-        elif self.kernelY == 'Polynomial':
-            kernelY = PolynomialKernel(self.polyd)
-        elif self.kernelY == 'Linear':
-            kernelY = LinearKernel()
-        else:
-            raise Exception('Undefined kernel function')
+        return kernel
 
-        Kx = kernelX.kernel(data_x)
-        Ky = kernelY.kernel(data_y)
-
-        # centering kernel matrix
-        Kx = Kernel.center_kernel_matrix(Kx)
-        Ky = Kernel.center_kernel_matrix(Ky)
-
-        if (is_discrete_Z is not None) and np.any(is_discrete_Z):
-            kernelZ_c = GaussianKernel()
-            if self.est_width == 'median':
-                kernelZ_c.set_width_median(data_z_c)
-            elif self.est_width == 'empirical':
-                kernelZ_c.set_width_empirical_kci(data_z_c)
-
+    def _make_kernel_matrix_z(self, data_z, data_z_c, data_z_d, data_x, is_discrete, kernel_name, Kx):
+        if np.any(is_discrete):
             kernelZ_d = DeltaKernel()
-
-            Kz_c = kernelZ_c.kernel(data_z_c)
             Kz_d = kernelZ_d.kernel(data_z_d)
-            Kz = Kz_c * Kz_d
+
+            if data_z_c is None:
+                Kz = Kz_d
+            else:
+                kernelZ_c = GaussianKernel()
+                if self.est_width == 'median':
+                    kernelZ_c.set_width_median(data_z_c)
+                elif self.est_width == 'empirical':
+                    kernelZ_c.set_width_empirical_kci(data_z_c)
+                Kz_c = kernelZ_c.kernel(data_z_c)
+
+                Kz = Kz_c * Kz_d
 
             Kzx = Kernel.center_kernel_matrix(Kz)
             Kzy = Kzx
-        elif self.kernelZ == 'Gaussian':
+        elif kernel_name == 'Gaussian':
             if not self.use_gp:
                 if self.est_width == 'manual':
                     if self.kwidthz is not None:
@@ -522,18 +449,111 @@ class KCI_CInd(object):
                 # construct Gaussian kernels according to learned hyperparameters
                 Kzy = gpy.kernel_.k1(data_z, data_z)
                 self.epsilon_y = np.exp(gpy.kernel_.theta[-1])
-        elif self.kernelZ == 'Polynomial':
+        elif kernel_name == 'Polynomial':
             kernelZ = PolynomialKernel(self.polyd)
             Kzx = kernelZ.kernel(data_z)
             Kzx = Kernel.center_kernel_matrix(Kzx)
             Kzy = Kzx
-        elif self.kernelZ == 'Linear':
+        elif kernel_name == 'Linear':
             kernelZ = LinearKernel()
             Kzx = kernelZ.kernel(data_z)
             Kzx = Kernel.center_kernel_matrix(Kzx)
             Kzy = Kzx
         else:
             raise Exception('Undefined kernel function')
+ 
+        return Kzx, Kzy
+
+    def _split_discrete(self, data, is_discrete):
+        if not np.any(is_discrete):
+            data_c = None
+            data_d = None
+        else:
+            data_d = data[:, is_discrete].copy()
+            data_d = stats.zscore(data_d, ddof=1, axis=0)
+            data_d[np.isnan(data_d)] = 0.
+
+            if sum(~is_discrete) == 0:
+                data_c = None
+            else:
+                data_c = data[:, ~is_discrete].copy()
+                data_c = stats.zscore(data_c, ddof=1, axis=0)
+                data_c[np.isnan(data_c)] = 0.
+
+        return data_d, data_c
+
+    def kernel_matrix(self, data_x, data_y, data_z, is_discrete_X=None, is_discrete_Y=None, is_discrete_Z=None):
+        """
+        Compute kernel matrix for data x, data y, and data_z
+        Parameters
+        ----------
+        data_x: input data for x (nxd1 array)
+        data_y: input data for y (nxd2 array)
+        data_z: input data for z (nxd3 array)
+        is_discrete_X : boolean, optional (default=None)
+        is_discrete_Y : boolean, optional (default=None)
+        is_discrete_Z : list of boolean, optional (default=None)
+
+        Returns
+        _________
+        Kx: kernel matrix for data_x (nxn)
+        Ky: kernel matrix for data_y (nxn)
+        Kzx: centering kernel matrix for data_x (nxn)
+        kzy: centering kernel matrix for data_y (nxn)
+        """
+        if is_discrete_X is None:
+            is_discrete_X = False
+        if is_discrete_Y is None:
+            is_discrete_Y = False
+        if is_discrete_Z is None:
+            is_discrete_Z = np.array([False for _ in range(data_z.shape[1])])
+        else:
+            is_discrete_Z = np.array(is_discrete_Z)
+
+        # XXX: workaround
+        if is_discrete_X and not is_discrete_Y:
+            tmp = data_x
+            data_x = data_y
+            data_y = tmp
+            is_discrete_X = False
+            is_discrete_Y = True
+
+        # normalize the data
+        data_x = stats.zscore(data_x, ddof=1, axis=0)
+        data_x[np.isnan(data_x)] = 0.
+        
+        data_y = stats.zscore(data_y, ddof=1, axis=0)
+        data_y[np.isnan(data_y)] = 0.
+        
+        data_z_d, data_z_c = self._split_discrete(data_z, is_discrete_Z)
+
+        data_z = stats.zscore(data_z, ddof=1, axis=0)
+        data_z[np.isnan(data_z)] = 0.
+        # We set 'ddof=1' to conform to the normalization way in the original Matlab implementation in
+        # http://people.tuebingen.mpg.de/kzhang/KCI-test.zip
+
+        # concatenate x and z
+        data_x = np.concatenate((data_x, 0.5 * data_z), axis=1)
+
+        if not is_discrete_X and not np.any(is_discrete_Z):
+            kernelX = self._make_kernel_xy(data_x, data_z, is_discrete_X, self.kernelX, self.kwidthx, xy="x")
+            Kx = kernelX.kernel(data_x)
+        else:
+            is_discrete_XZ = np.concatenate([[is_discrete_X], is_discrete_Z])
+
+            data_x_d, data_x_c = self._split_discrete(data_x, is_discrete_XZ)
+
+            Kx, _ = self._make_kernel_matrix_z(data_x, data_x_c, data_x_d, None, is_discrete_XZ, "", None)
+
+        kernelY = self._make_kernel_xy(data_y, data_z, is_discrete_Y, self.kernelY, self.kwidthy, xy="y")
+        Ky = kernelY.kernel(data_y)
+
+        # centering kernel matrix
+        Kx = Kernel.center_kernel_matrix(Kx)
+        Ky = Kernel.center_kernel_matrix(Ky)
+
+        Kzx, Kzy = self._make_kernel_matrix_z(data_z, data_z_c, data_z_d, data_x, is_discrete_Z, self.kernelZ, Kx)
+
         return Kx, Ky, Kzx, Kzy
 
     def KCI_V_statistic(self, Kx, Ky, Kzx, Kzy):
