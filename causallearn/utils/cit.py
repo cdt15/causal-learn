@@ -184,7 +184,7 @@ class KCI(CIT_Base):
         self.kci_ui = KCI_UInd(**kci_ui_kwargs)
         self.kci_ci = KCI_CInd(**kci_ci_kwargs)
 
-        self.is_discrete = kwargs["is_discrete"] if "is_discrete" in kwargs.keys() else None
+        self.is_discrete = np.array(kwargs["is_discrete"]) if "is_discrete" in kwargs.keys() else None
 
     def __call__(self, X, Y, condition_set=None):
         # Kernel-based conditional independence test.
@@ -205,7 +205,7 @@ class KCI(CIT_Base):
 
             if condition_set is not None:
                 is_discrete_Z = self.is_discrete[condition_set] if len(condition_set) > 0 else None
-                if (is_discrete_Z is not None) and (True not in is_discrete_Z):
+                if (is_discrete_Z is not None) and not (np.any(is_discrete_Z)):
                     is_discrete_Z = None
 
         p = self.kci_ui.compute_pvalue(

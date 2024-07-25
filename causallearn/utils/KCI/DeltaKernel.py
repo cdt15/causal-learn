@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from numpy import ndarray
+from numpy import ndarray, isclose
 from scipy.spatial.distance import cdist, pdist, squareform
 
 from causallearn.utils.KCI.Kernel import Kernel
@@ -26,7 +26,7 @@ class DeltaKernel(Kernel):
         """
 
         if Y is None:
-            K = (~squareform(pdist(X)).astype(bool)).astype(int)
+            K = isclose(squareform(pdist(X)), 0).astype(int)
         else:
-            K = (~cdist(X, X).astype(bool)).astype(int)
+            K = isclose(cdist(X, X), 0).astype(int)
         return K
