@@ -1,6 +1,6 @@
 import setuptools
 
-with open('README.md', 'r') as fh:
+with open('README.md', 'r', encoding='utf-8') as fh:
     README = fh.read()
 
 VERSION = '0.1.3.8'
